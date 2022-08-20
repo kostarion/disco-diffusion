@@ -15,7 +15,10 @@ MAX_ADABINS_AREA = 500000
 MIN_ADABINS_AREA = 448*448
 
 @torch.no_grad()
-def transform_image_3d(img_filepath, midas_model, midas_transform, device, rot_mat=torch.eye(3).unsqueeze(0), translate=(0.,0.,-0.04), near=2000, far=20000, fov_deg=60, padding_mode='border', sampling_mode='bicubic', midas_weight = 0.3,spherical=False):
+def transform_image_3d(
+          img_filepath, midas_model, midas_transform, device, rot_mat=torch.eye(3).unsqueeze(0),
+          translate=(0.,0.,-0.04), near=2000, far=20000, fov_deg=60, padding_mode='border',
+          sampling_mode='bicubic', midas_weight = 0.3, spherical=False, save_mask=False):
     img_pil = Image.open(open(img_filepath, 'rb')).convert('RGB')
     w, h = img_pil.size
     image_tensor = torchvision.transforms.functional.to_tensor(img_pil).to(device)
@@ -107,17 +110,26 @@ def transform_image_3d(img_filepath, midas_model, midas_transform, device, rot_m
     # coords_2d will have shape (N,H,W,2).. which is also what grid_sample needs.
     coords_2d = torch.nn.functional.affine_grid(identity_2d_batch, [1,1,h,w], align_corners=False)
     offset_coords_2d = coords_2d - torch.reshape(offset_xy, (h,w,2)).unsqueeze(0)
+    if save_mask:
+        warp_mask = torch.ones_like(image_tensor).unsqueeze(0).to(device)
 
     if spherical:
         spherical_grid = get_spherical_projection(h, w, torch.tensor([0,0], device=device), -0.4,device=device)#align_corners=False
         stage_image = torch.nn.functional.grid_sample(image_tensor.add(1/512 - 0.0001).unsqueeze(0), offset_coords_2d, mode=sampling_mode, padding_mode=padding_mode, align_corners=True)
         new_image = torch.nn.functional.grid_sample(stage_image, spherical_grid,align_corners=True) #, mode=sampling_mode, padding_mode=padding_mode, align_corners=False)
+        warp_mask = torch.nn.functional.grid_sample(warp_mask, offset_coords_2d, mode=sampling_mode, padding_mode='zeros', align_corners=True)
+        warp_mask = torch.nn.functional.grid_sample(warp_mask, spherical_grid,align_corners=True)
     else:
         new_image = torch.nn.functional.grid_sample(image_tensor.add(1/512 - 0.0001).unsqueeze(0), offset_coords_2d, mode=sampling_mode, padding_mode=padding_mode, align_corners=False)
+        warp_mask = torch.nn.functional.grid_sample(warp_mask, offset_coords_2d, mode='bilinear', padding_mode='zeros', align_corners=False)
 
     img_pil = torchvision.transforms.ToPILImage()(new_image.squeeze().clamp(0,1.))
-
+    
     torch.cuda.empty_cache()
+
+    if save_mask:
+      warp_mask_pil = torchvision.transforms.ToPILImage()(warp_mask.squeeze().clamp(0,1.))
+      return img_pil, warp_mask_pil
 
     return img_pil
 
