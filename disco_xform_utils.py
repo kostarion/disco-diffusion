@@ -117,11 +117,13 @@ def transform_image_3d(
         spherical_grid = get_spherical_projection(h, w, torch.tensor([0,0], device=device), -0.4,device=device)#align_corners=False
         stage_image = torch.nn.functional.grid_sample(image_tensor.add(1/512 - 0.0001).unsqueeze(0), offset_coords_2d, mode=sampling_mode, padding_mode=padding_mode, align_corners=True)
         new_image = torch.nn.functional.grid_sample(stage_image, spherical_grid,align_corners=True) #, mode=sampling_mode, padding_mode=padding_mode, align_corners=False)
-        warp_mask = torch.nn.functional.grid_sample(warp_mask, offset_coords_2d, mode=sampling_mode, padding_mode='zeros', align_corners=True)
-        warp_mask = torch.nn.functional.grid_sample(warp_mask, spherical_grid,align_corners=True)
+        if save_mask:
+            warp_mask = torch.nn.functional.grid_sample(warp_mask, offset_coords_2d, mode=sampling_mode, padding_mode='zeros', align_corners=True)
+            warp_mask = torch.nn.functional.grid_sample(warp_mask, spherical_grid,align_corners=True)
     else:
         new_image = torch.nn.functional.grid_sample(image_tensor.add(1/512 - 0.0001).unsqueeze(0), offset_coords_2d, mode=sampling_mode, padding_mode=padding_mode, align_corners=False)
-        warp_mask = torch.nn.functional.grid_sample(warp_mask, offset_coords_2d, mode='bilinear', padding_mode='zeros', align_corners=False)
+        if save_mask:
+            warp_mask = torch.nn.functional.grid_sample(warp_mask, offset_coords_2d, mode='bilinear', padding_mode='zeros', align_corners=False)
 
     img_pil = torchvision.transforms.ToPILImage()(new_image.squeeze().clamp(0,1.))
     
